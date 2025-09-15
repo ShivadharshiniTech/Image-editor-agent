@@ -55,7 +55,7 @@ class StreamlitImageAgent:
                 text=True,
                 encoding='utf-8',
                 errors='replace',
-                timeout=45,
+                timeout=120,
                 startupinfo=startupinfo
             )
 
@@ -124,6 +124,12 @@ class StreamlitImageAgent:
     #     if any(keyword in instruction_lower for keyword in remove_keywords):
     #         actions.append({"type": "remove_background", "confidence": 0.9})
         
+    #     set_bg_keywords= [
+    #         'replace background', 'change background', 'set background','make background','embed background','modify background']
+    #     ]
+    #     if any(keyword in instruction_lower for keyword in set_bg_keywords):
+    #         actions.append({"type": "replace_background", "confidence": 0.9})
+
     #     # Look for backgrounds
     #     for bg in self.available_backgrounds:
     #         bg_name = bg.lower().replace('.jpg', '').replace('.png', '').replace('.jpeg', '')
@@ -159,16 +165,16 @@ class StreamlitImageAgent:
     def analyze_instruction(self, instruction: str) -> Dict[str, Any]:
         """Main analysis method"""
         prompt = f'''
-You are an expert image editing assistant. Analyze the following instruction and respond with ONLY valid JSON (no markdown, no extra text). IMPORTANT: The JSON must have exactly three top-level keys: "actions" (an array), "reasoning" (a string), and "warnings" (an array). Do NOT put "reasoning" or "warnings" inside the "actions" array or any other array. They must be top-level keys, not inside any array. If you do not follow this format exactly, your response will be rejected.
+You are an expert image editing assistant. You can find the exact intent even with twisted user queries. You can find different wordings and indirect mentioning. Some may mention colors in adjective form like greener, reddish. You are much expert and capable of finding and handling all that with the correct action. Analyze the following instruction and respond with ONLY valid JSON (no markdown, no extra text). IMPORTANT: The JSON must have exactly three top-level keys: "actions" (an array), "reasoning" (a string), and "warnings" (an array). Do NOT put "reasoning" or "warnings" inside the "actions" array or any other array. They must be top-level keys, not inside any array. If you do not follow this format exactly, your response will be rejected.
 
 Instruction: "{instruction}"
 
 When to use each action:
-- Use 'remove_background' if the instruction asks to remove, erase, or make the background transparent.
-- Use 'replace_background' if the instruction asks to set a specific image as the background. Add a 'params' key with the background filename.
-- Use 'set_background_color' if the instruction asks to change the background to a specific color. Add a 'params' key with the color name.
+- Use 'remove_background' if the instruction asks to remove, erase, or make the background transparent. Do it first always.
+- Use 'replace_background' only if the instruction mentions any file from backgrounds folder. Add a 'params' key with the background filename. If replace_background is chosen, set_background_color should not be chosen and vice versa.
+- Use 'set_background_color' if the instruction asks to change the background to a specific color. Only use standard color names or hex codes for colors. **Before choosing set_background_color, always check if the word matches any file in the available backgrounds list. If it matches, use replace_background instead.** If set_background_color is chosen, replace_background should not be chosen and vice versa.
 
-Response format examples:
+Response format examples: atmost any 2 actions type only will be chosen in which remove_background is for sure.
 Remove background:
 {{
   "actions": [
@@ -197,6 +203,8 @@ Set background color:
 }}
 
 Available action types: remove_background, replace_background, set_background_color
+
+dont perform replace_background unless a file name is mentioned from backgrounds folder
 Available backgrounds: {', '.join(self.available_backgrounds) if self.available_backgrounds else 'none'}
 '''
         self.logger.info(f"Prompt sent to LLM:\n{prompt}")
@@ -247,11 +255,22 @@ Available backgrounds: {', '.join(self.available_backgrounds) if self.available_
                 elif action_type == 'replace_background':
                     params = action.get('params', {})
                     bg_file = params.get('source')
-                    if bg_file and bg_file in self.available_backgrounds:
-                        bg_path = os.path.join('backgrounds', bg_file)
-                        execution_log.append(f"🖼️ Setting background to {bg_file} (confidence: {confidence:.1%})")
+                    if bg_file:
+                        # Robust background file matching (ignore extension)
+                        bg_name = os.path.splitext(bg_file)[0].lower()
+                        matched_file = None
+                        for candidate in self.available_backgrounds:
+                            candidate_name = os.path.splitext(candidate)[0].lower()
+                            if candidate_name == bg_name:
+                                matched_file = candidate
+                                break
+                        if matched_file:
+                            bg_path = os.path.join('backgrounds', matched_file)
+                            execution_log.append(f"🖼️ Setting background to {matched_file} (confidence: {confidence:.1%})")
+                        else:
+                            execution_log.append(f"⚠️ Background {bg_file} not found (tried to match by name)")
                     else:
-                        execution_log.append(f"⚠️ Background {bg_file} not found")
+                        execution_log.append(f"⚠️ No background file specified for replace_background")
                 elif action_type == 'set_background_color':
                     params = action.get('params', {})
                     color = params.get('color')
