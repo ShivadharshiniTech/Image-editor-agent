@@ -210,8 +210,6 @@ Available backgrounds: {', '.join(self.available_backgrounds) if self.available_
         self.logger.info(f"Prompt sent to LLM:\n{prompt}")
         with st.spinner("🤖 Agent is thinking..."):
             response = self._call_ollama(prompt)
-        self.logger.info(f"Raw LLM response:\n{response}")
-        st.text_area("LLM Raw Response", response, height=150)
 
         if not response:
             st.warning("Using rule-based fallback (LLM didn't respond)")
@@ -298,7 +296,8 @@ Available backgrounds: {', '.join(self.available_backgrounds) if self.available_
             self.logger.error(f"Error in final composition: {str(e)}\n{tb}")
             return None, execution_log
 
-# Streamlit UI
+
+# Streamlit UI (vertical, no columns)
 st.set_page_config(page_title="🤖 Agentic Image Editor", layout="wide")
 st.title("🤖 Agentic Image Editor")
 
@@ -306,117 +305,67 @@ st.title("🤖 Agentic Image Editor")
 if 'agent' not in st.session_state:
     st.session_state.agent = StreamlitImageAgent()
 
-col1, col2 = st.columns([1, 1])
+st.subheader("📤 Input")
+uploaded_file = st.file_uploader("Upload an image", type=["jpg", "png", "jpeg"])
+if uploaded_file:
+    st.image(uploaded_file, caption="Preview: Uploaded Image", width=600)
 
-with col1:
-    st.subheader("📤 Input")
-    
-    uploaded_file = st.file_uploader("Upload an image", type=["jpg", "png", "jpeg"])
-    
-    instruction = st.text_area(
-        "Enter your instruction:", 
-        placeholder="e.g., 'Remove the background', 'Make background blue', 'Replace with beach scene'",
-        height=100
-    )
-    
-    if st.button("🚀 Process Image", type="primary"):
-        if uploaded_file and instruction:
-            img_bytes = uploaded_file.read()
-            img = Image.open(io.BytesIO(img_bytes))
-            
-            # Store original
-            st.session_state.original_image = img
-            
-            # Analyze instruction
-            plan = st.session_state.agent.analyze_instruction(instruction)
-            st.write('**DEBUG:** Actions in plan:', plan.get('actions'))
-            # Execute plan
-            if plan['actions']:
-                with st.spinner("🔄 Executing plan..."):
-                    result_image, execution_log = st.session_state.agent.execute_plan(plan['actions'], img_bytes)
-                st.session_state.result = {
-                    'plan': plan,
-                    'result_image': result_image,
-                    'execution_log': execution_log,
-                    'success': result_image is not None
-                }
-                st.write('**DEBUG:** Execution log:', execution_log)
-            else:
-                st.error("No actions planned. Try a different instruction.")
-        else:
-            st.error("Please upload an image and enter an instruction")
+instruction = st.text_area(
+    "Enter your instruction:",
+    placeholder="e.g., 'Remove the background', 'Make background blue', 'Replace with bg4'",
+    height=100
+)
 
-with col2:
-    st.subheader("📤 Results")
-    if hasattr(st.session_state, 'result') and st.session_state.result:
-        result = st.session_state.result
-        plan = result['plan']
-        # Show plan
-        st.write("**🧠 Agent's Plan:**")
-        st.info(f"*Reasoning:* {plan['reasoning']}")
+if st.button("🚀 Process Image", type="primary"):
+    if uploaded_file and instruction:
+        img_bytes = uploaded_file.read()
+        img = Image.open(io.BytesIO(img_bytes))
+        st.session_state.original_image = img
+        plan = st.session_state.agent.analyze_instruction(instruction)
         if plan['actions']:
-            st.write("*Actions:*")
-            for i, action in enumerate(plan['actions'], 1):
-                confidence = action.get('confidence', 0)
-                params = action.get('params', {})
-                params_str = f" {params}" if params else ""
-                st.write(f"{i}. `{action['type']}`{params_str} - {confidence:.1%} confidence")
-        # Always show execution log
-        st.write("**Execution Log:**")
-        for log_entry in result.get('execution_log', []):
-            st.write(log_entry)
-        
-        # Show results
-        if result['success'] and result['result_image']:
-            st.success("✅ Processing completed!")
-            
-            # Side by side comparison
-            if hasattr(st.session_state, 'original_image'):
-                col_orig, col_result = st.columns(2)
-                with col_orig:
-                    st.write("**Before:**")
-                    st.image(st.session_state.original_image, use_container_width=True)
-                with col_result:
-                    st.write("**After:**")
-                    st.image(result['result_image'], use_container_width=True)
-            
-            # Download
-            buf = io.BytesIO()
-            result['result_image'].save(buf, format='PNG')
-            st.download_button(
-                "📥 Download Result",
-                data=buf.getvalue(),
-                file_name="edited_image.png",
-                mime="image/png"
-            )
+            with st.spinner("🔄 Executing plan..."):
+                result_image, execution_log = st.session_state.agent.execute_plan(plan['actions'], img_bytes)
+            st.session_state.result = {
+                'plan': plan,
+                'result_image': result_image,
+                'execution_log': execution_log,
+                'success': result_image is not None
+            }
         else:
-            st.error("❌ Processing failed. Check execution log.")
+            st.error("No actions planned. Try a different instruction.")
+    else:
+        st.error("Please upload an image and enter an instruction")
+
+# Results section (vertical, only log and output image)
+if hasattr(st.session_state, 'result') and st.session_state.result:
+    result = st.session_state.result
+    st.write("**Execution Log:**")
+    for log_entry in result.get('execution_log', []):
+        st.write(log_entry)
+    if result['success'] and result['result_image']:
+        st.image(result['result_image'], caption="Output", width=600)
+    else:
+        st.warning("No result image generated.")
 
 # Sidebar
 with st.sidebar:
     st.subheader("🤖 Agent Status")
     agent = st.session_state.agent
-    
-    st.metric("Model", agent.model_name)
     st.metric("Available Backgrounds", len(agent.available_backgrounds))
-    
     if agent.available_backgrounds:
         with st.expander("📁 Background Files"):
-            for bg in agent.available_backgrounds:
-                st.text(f"• {bg}")
+            for bg_file in agent._scan_backgrounds():
+                st.write(bg_file)
     else:
         st.info("💡 Add images to the 'backgrounds' folder for background replacement")
-    
     st.subheader("💡 Example Instructions")
     examples = [
         "Remove the background",
-        "Make background white", 
-        "Replace with beach scene",
+        "Make background gold", 
+        "Replace with bg4 image in files",
         "Cut out the subject",
         "Detach the background"
     ]
-    
     for example in examples:
         if st.button(f"'{example}'", key=f"ex_{hash(example)}"):
-            # This will set the instruction (you'd need to handle this in the main area)
-            pass
+            st.session_state['example_instruction'] = example
