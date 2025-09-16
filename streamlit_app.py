@@ -1,4 +1,3 @@
-# fixed_streamlit_app.py
 import streamlit as st
 from PIL import Image
 import io
@@ -10,7 +9,7 @@ import logging
 import warnings
 from typing import Dict, Any, Optional
 
-# Suppress warnings
+
 warnings.filterwarnings("ignore")
 
 class StreamlitImageAgent:
@@ -18,7 +17,7 @@ class StreamlitImageAgent:
         self.model_name = model_name
         self.available_backgrounds = self._scan_backgrounds()
         
-        # Set up logging
+        
         self.logger = logging.getLogger(__name__)
         self.logger.setLevel(logging.INFO)
 
@@ -40,7 +39,6 @@ class StreamlitImageAgent:
         try:
             cmd = ["ollama", "run", self.model_name]
 
-            # Windows-specific subprocess configuration
             startupinfo = None
             if os.name == 'nt':
                 startupinfo = subprocess.STARTUPINFO()
@@ -91,7 +89,6 @@ class StreamlitImageAgent:
         except json.JSONDecodeError:
             pass
         
-        # Try patterns
         patterns = [
             r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}',
             r'```(?:json)?\s*(\{.*?\})\s*```',
@@ -221,7 +218,6 @@ Available backgrounds: {', '.join(self.available_backgrounds) if self.available_
             st.warning("Using rule-based fallback (couldn't parse JSON)")
             return self._fallback_parse(instruction)
 
-        # Validate
         if 'actions' not in parsed:
             parsed['actions'] = []
         if 'reasoning' not in parsed:
@@ -254,7 +250,6 @@ Available backgrounds: {', '.join(self.available_backgrounds) if self.available_
                     params = action.get('params', {})
                     bg_file = params.get('source')
                     if bg_file:
-                        # Robust background file matching (ignore extension)
                         bg_name = os.path.splitext(bg_file)[0].lower()
                         matched_file = None
                         for candidate in self.available_backgrounds:
@@ -284,7 +279,6 @@ Available backgrounds: {', '.join(self.available_backgrounds) if self.available_
                 execution_log.append(f"❌ Error in {action_type}: {str(e)}\n{tb}")
                 self.logger.error(f"Error in {action_type}: {str(e)}\n{tb}")
 
-        # Final composition
         try:
             final_image = composite_with_background(current_image, bg_path=bg_path, bg_color=bg_color)
             execution_log.append("✅ Final composition completed")
@@ -297,11 +291,9 @@ Available backgrounds: {', '.join(self.available_backgrounds) if self.available_
             return None, execution_log
 
 
-# Streamlit UI (vertical, no columns)
 st.set_page_config(page_title="🤖 Agentic Image Editor", layout="wide")
 st.title("🤖 Agentic Image Editor")
 
-# Initialize agent
 if 'agent' not in st.session_state:
     st.session_state.agent = StreamlitImageAgent()
 
@@ -336,7 +328,6 @@ if st.button("🚀 Process Image", type="primary"):
     else:
         st.error("Please upload an image and enter an instruction")
 
-# Results section (vertical, only log and output image)
 if hasattr(st.session_state, 'result') and st.session_state.result:
     result = st.session_state.result
     st.write("**Execution Log:**")
@@ -347,7 +338,6 @@ if hasattr(st.session_state, 'result') and st.session_state.result:
     else:
         st.warning("No result image generated.")
 
-# Sidebar
 with st.sidebar:
     st.subheader("🤖 Agent Status")
     agent = st.session_state.agent
